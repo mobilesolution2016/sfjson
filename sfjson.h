@@ -60,6 +60,7 @@ public:
 public:
 	sfNode* find(const char* str) const;
 	sfNode* add(const char* name = NULL, size_t len = 0);
+	sfNode* add(sfNode* child);
 
 	void set(bool val);
 	void set(int64_t val);
@@ -890,15 +891,7 @@ namespace sfjson {
 			m_nodeOpens[m_nOpens ++] = n;
 
 			if (parent)
-			{
-				n->pFile = parent->pFile;
-				parent->childCount ++;
-				if (parent->child)
-					parent->childLast->next = n;
-				else
-					parent->child = n;
-				parent->childLast = n;
-			}
+				return parent->add(n);
 
 			return n;
 		}
@@ -953,15 +946,7 @@ namespace sfjson {
 				}
 			}
 
-			n->pFile = parent->pFile;
-			parent->childCount ++;			
-			if (parent->child)
-				parent->childLast->next = n;
-			else
-				parent->child = n;
-			parent->childLast = n;
-
-			return n;
+			return parent->add(n);
 		}
 
 		char* parseRoot(char* pReadPos)
@@ -1520,6 +1505,19 @@ sfNode* sfNode::add(const char* name, size_t len)
 		child = n;
 
 	return n;
+}
+
+sfNode* sfNode::add(sfNode* child)
+{
+	child->pFile = pFile;
+	childCount ++;
+	if (child)
+		childLast->next = child;
+	else
+		child = child;
+	childLast = child;
+
+	return child;
 }
 
 void sfNode::set(bool val)
