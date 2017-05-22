@@ -85,8 +85,22 @@ enum sfJsonFlags {
  *   sfNode* root = sfJsonCreate(true);
  *   链式操作，一次性添加多个：
  *   root->addValue("name", "xiaomi")->addValue("type", "phone")->addValue("price", 999)
- *   添加一个子数组，然后链式操作：
- *   root->addArray()->name("values")->append(1)->append(2)->append(true)->append(3.5)->append(NULL);
+ *   一个更完整的链式操作
+		n = sfJsonCreate(true);
+		n->add(
+			n->createArray("group1")->append((int)1)->append(3.5f)->append(true)->append()
+		)->add(
+			n->createObject("group2")->appendNamed("a", 3.5)->appendNamed("b", false)->appendNamed("c")->add(
+				n->createArray("last")->add(n->createValue()->val("Hello World!"))
+			)
+		);
+ *
+ *   encode时函数名的规则：
+ *      1、create系列的函数只是创建一个节点，并且返回创建出的节点
+ *      2、add系列函数用于创建并将该节点添加为自己的子节点，返回为自己，所以可以产生链式调用
+ *      3、append系列函数用于往自己的子节点中追加一个新的值类型的子节点
+ *      4、name和val函数只是对名字和值进行设置
+ *
  */
 class sfNode
 {
@@ -121,27 +135,40 @@ public:
 	// 创建出一个空值
 	sfNode* createValue();
 
-	// 将一个已经创建好的节点添加到本节点下成为子节点
+	// 将一个已经创建好的节点添加到本节点下成为子节点并返回this
 	sfNode* add(sfNode* child);
 
-	// 创建节点同时添加为子节点
-	inline sfNode* addObject(const char* name = NULL, size_t len = 0) { return add(createObject(name, len)); }
-	// 创建数组同时添加为子节点
-	inline sfNode* addArray(const char* name = NULL, size_t len = 0) { return add(createArray(name, len)); }
-	// 创建值同时添加为子节点
-	inline sfNode* addValue() { return add(createValue()); }
+	// 创建节点同时添加为子节点并返回刚创建的节点
+	inline sfNode* addObject(const char* name = NULL, size_t len = 0) 
+	{ 
+		sfNode* n = createObject(name, len); add(n); 
+		return n;
+	}
+	// 创建数组同时添加为子节点并返回刚创建的节点
+	inline sfNode* addArray(const char* name = NULL, size_t len = 0) 
+	{ 
+		sfNode* n = createArray(name, len); add(n); 
+		return n;
+	}
+	// 创建值同时添加为子节点并返回刚创建的节点
+	inline sfNode* addValue() 
+	{ 
+		sfNode* n = createValue(); add(n);
+		return n;
+	}
 
 	// 设置节点的名字
 	sfNode* name(const char* name, size_t len = 0);
 
 	// 设置本节点的值为布尔型
-	void val(bool val);
+	sfNode* val(bool val);
 	// 设置本节点的值为整数型
-	void val(int64_t val);
+	sfNode* val(int64_t val);
+	sfNode* val(int val);
 	// 设置本节点的值为小数型
-	void val(double val);
-	// 设置本节点的值为字符串型。如果val为NULL则值设置为null节点
-	void val(const char* val, size_t len = 0);
+	sfNode* val(double val);
+	// 设置本节点的值为字符串型。如果不带参数调用则值设置为null节点
+	sfNode* val(const char* val = NULL, size_t len = 0);
 
 	// 整数、布尔、小数转浮点型，其它类型返回0
 	double toDouble() const;
@@ -168,6 +195,11 @@ public:// 链式操作函数组
 		addValue()->val(val);
 		return this;
 	}
+	inline sfNode* append(int val)
+	{
+		addValue()->val(val);
+		return this;
+	}
 	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
 	inline sfNode* append(double val)
 	{
@@ -175,35 +207,58 @@ public:// 链式操作函数组
 		return this;
 	}
 	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(const char* val, size_t len = 0)
+	inline sfNode* append(const char* val = NULL, size_t len = 0)
 	{
 		addValue()->val(val, len);
 		return this;
 	}
 
 	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(const char* name, bool val)
+	inline sfNode* appendNamed(const char* name, bool val)
 	{
 		addValue()->name(name)->val(val);
 		return this;
 	}
 	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(const char* name, int64_t val)
+	inline sfNode* appendNamed(const char* name, int64_t val)
+	{
+		addValue()->name(name)->val(val);
+		return this;
+	}
+	inline sfNode* appendNamed(const char* name, int val)
 	{
 		addValue()->name(name)->val(val);
 		return this;
 	}
 	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(const char* name, double val)
+	inline sfNode* appendNamed(const char* name, double val)
 	{
 		addValue()->name(name)->val(val);
 		return this;
 	}
 	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(const char* name, const char* val, size_t len = 0)
+	inline sfNode* appendNamed(const char* name, const char* val = NULL, size_t len = 0)
 	{
 		addValue()->name(name)->val(val, len);
 		return this;
+	}
+
+	//
+	inline sfNode* createValue(bool val)
+	{
+		return createValue()->val(val);
+	}
+	inline sfNode* createValue(int64_t val)
+	{
+		return createValue()->val(val);
+	}
+	inline sfNode* createValue(double val)
+	{
+		return createValue()->val(val);
+	}
+	inline sfNode* createValue(const char* val, size_t len = 0)
+	{
+		return createValue()->val(val, len);
 	}
 };
 
@@ -1628,7 +1683,7 @@ sfNode* sfNode::add(sfNode* n)
 		child = n;
 	childLast = n;
 
-	return n;
+	return this;
 }
 
 sfNode* sfNode::name(const char* name, size_t len)
@@ -1644,7 +1699,7 @@ sfNode* sfNode::name(const char* name, size_t len)
 	return this;
 }
 
-void sfNode::val(bool val)
+sfNode* sfNode::val(bool val)
 {
 	assert(nodeType < JATObject);
 
@@ -1654,9 +1709,10 @@ void sfNode::val(bool val)
 		valLength = -1;
 		nodeType = JATBooleanValue;	
 	}
+	return this;
 }
 
-void sfNode::val(int64_t val)
+sfNode* sfNode::val(int64_t val)
 {
 	assert(nodeType < JATObject);
 
@@ -1666,9 +1722,23 @@ void sfNode::val(int64_t val)
 		valLength = -1;
 		nodeType = JATIntValue;
 	}
+	return this;
 }
 
-void sfNode::val(double val)
+sfNode* sfNode::val(int val)
+{
+	assert(nodeType < JATObject);
+
+	if (nodeType < JATObject)
+	{
+		ival = val;
+		valLength = -1;
+		nodeType = JATIntValue;
+	}
+	return this;
+}
+
+sfNode* sfNode::val(double val)
 {
 	assert(nodeType < JATObject);
 
@@ -1678,9 +1748,10 @@ void sfNode::val(double val)
 		valLength = -1;
 		nodeType = JATDoubleValue;
 	}
+	return this;
 }
 
-void sfNode::val(const char* val, size_t len)
+sfNode* sfNode::val(const char* val, size_t len)
 {	
 	assert(nodeType < JATObject);
 
@@ -1701,6 +1772,7 @@ void sfNode::val(const char* val, size_t len)
 			nodeType = JATNullValue;
 		}
 	}
+	return this;
 }
 
 bool sfNode::printTo(std::string& strOut, uint32_t flags)

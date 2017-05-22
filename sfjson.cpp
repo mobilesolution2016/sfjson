@@ -14,16 +14,17 @@ struct Test {
 		fclose(fp);
 
 		std::string str;
-		sfNode* n = sfJsonDecode(mem, s);		
+		sfNode* n = sfJsonDecode(mem, s);
+		//n->printTo(str);
 
 		n = sfJsonCreate(true);
-		n->addValue()->name("name")->val("xiaomi");
-		n->addArray("haha");
-		n->addArray()->name("values")->append((int64_t)1)->append((int64_t)2)->append(true)->append(3.5);
-
-		sfNode* lv2 = n->createObject("strs");
-		lv2->addValue()->name("hello")->val("hi");
-		n->add(lv2);
+		n->add(
+			n->createArray("group1")->append((int)1)->append(3.5f)->append(true)->append()
+		)->add(
+			n->createObject("group2")->appendNamed("a", 3.5)->appendNamed("b", false)->appendNamed("c")->add(
+				n->createArray("last")->add(n->createValue()->val("Hello World!"))
+			)
+		);
 
 		n->printTo(str);
 
