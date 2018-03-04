@@ -9,9 +9,6 @@
 #include <string>
 #include <algorithm>
 
-// 如果启用下面这个头文件的包含的话，则在格式化整数和浮点数到字符串时速度可以快上好几倍。启用之后，记得把crtopt.cpp加入到工程中
-#include "crtopt.h"
-
 #ifdef _WINDOWS
 #	undef min
 #	undef max
@@ -70,13 +67,15 @@ enum sfJsonFlags {
 	kJsonSimpleEscape = 2,
 };
 
+class sfNode;
+
 // Json的Node
 /*
  * 使用全局函数：sfJsonDecode 来从字符串创建出Json Node对象，即可使用
  * 使用全局函数：sfJsonCreate 创建出一个Root节点，然后就可以使用add函数来添加层次
  *
  * decode示例：
- *   sfNode* root = sfJsonDecode(jsonString);
+ *   sfNode* root = sfJsonDecode(jsonString, stringLength);
  *   puts(root->find("name"));
  *   puts(root->index(0)->strval);
  *   推荐不使用index函数，因为他每次都需要从链表头开始迭代，最好是根据代码上下文的需要，自行从child开始向后使用next成员逐个操作
@@ -88,178 +87,40 @@ enum sfJsonFlags {
  *   一个更完整的链式操作
 		n = sfJsonCreate(true);
 		n->add(
-			n->createArray("group1")->append((int)1)->append(3.5f)->append(true)->append()
+			n->createArray()->append((int)1)->append(3.5f)->append(true), "group1"
 		)->add(
 			n->createObject("group2")->appendNamed("a", 3.5)->appendNamed("b", false)->appendNamed("c")->add(
-				n->createArray("last")->add(n->createValue()->val("Hello World!"))
+				n->createArray()->add(n->createValue()->val("Hello World!")), "last"
 			)
 		);
  *
  *   encode时函数名的规则：
- *      1、create系列的函数只是创建一个节点，并且返回创建出的节点
- *      2、add系列函数用于创建并将该节点添加为自己的子节点，返回为自己，所以可以产生链式调用
- *      3、append系列函数用于往自己的子节点中追加一个新的值类型的子节点
+ *      1、create XXXX系列的函数只是创建一个节点，并且返回创建出的节点
+ *      2、add XXXX系列函数用于创建并将该节点添加为自己的子节点，返回为新创建的节点
+ *      3、append XXXX和appendNamed XXXX系列函数用于往自己的子节点中追加一个新的值类型的子节点（或命名的子节点）同时返回this，因此可以链式调用
  *      4、name和val函数只是对名字和值进行设置
  *
  */
-class sfNode
+class sfNodeBase
 {
 public:
 	char			*nameKey;
 	union {
 		bool		bval;
 		int64_t		ival;
+		int32_t		i32val;
 		double		dval;
 		char		*strval;
 	};
 
 	uint32_t		nameLength;
-	uint32_t		valLength;						// -1表示非字符串值
+	uint32_t		valLength;						// 编码时，-1表示非字符串值，否则表示解码时从源码字符串读出的值的字符个数
 
 	uint32_t		childCount;
 	uint32_t		nodeType;
 
 	sfNode			*child, *childLast, *next;
 	void			*pFile;
-
-public:
-	// 按名字顺序查找
-	inline sfNode* find(const char* str) const;
-	// 按顺序出
-	inline sfNode* index(uint32_t index) const;
-
-	// 创建出一个空节点
-	sfNode* createObject(const char* name = NULL, size_t len = 0);
-	// 创建出一个空数组
-	sfNode* createArray(const char* name = NULL, size_t len = 0);
-	// 创建出一个空值
-	sfNode* createValue();
-
-	// 将一个已经创建好的节点添加到本节点下成为子节点并返回this
-	sfNode* add(sfNode* child);
-
-	// 创建节点同时添加为子节点并返回刚创建的节点
-	inline sfNode* addObject(const char* name = NULL, size_t len = 0) 
-	{ 
-		sfNode* n = createObject(name, len); add(n); 
-		return n;
-	}
-	// 创建数组同时添加为子节点并返回刚创建的节点
-	inline sfNode* addArray(const char* name = NULL, size_t len = 0) 
-	{ 
-		sfNode* n = createArray(name, len); add(n); 
-		return n;
-	}
-	// 创建值同时添加为子节点并返回刚创建的节点
-	inline sfNode* addValue() 
-	{ 
-		sfNode* n = createValue(); add(n);
-		return n;
-	}
-
-	// 设置节点的名字
-	sfNode* name(const char* name, size_t len = 0);
-
-	// 设置本节点的值为布尔型
-	sfNode* val(bool val);
-	// 设置本节点的值为整数型
-	sfNode* val(int64_t val);
-	sfNode* val(int val);
-	// 设置本节点的值为小数型
-	sfNode* val(double val);
-	// 设置本节点的值为字符串型。如果不带参数调用则值设置为null节点
-	sfNode* val(const char* val = NULL, size_t len = 0);
-
-	// 整数、布尔、小数转浮点型，其它类型返回0
-	double toDouble() const;
-	// 整数、布尔、小数转整数型，其它类型返回0
-	int64_t toInteger() const;
-
-	// 格式化输出为字符串
-	bool printTo(std::string& strOut, uint32_t flags = kJsonUnicodes);
-
-	// 销毁
-	void destroy();
-
-public:// 链式操作函数组
-
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(bool val)
-	{
-		addValue()->val(val);
-		return this;
-	}
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(int64_t val)
-	{
-		addValue()->val(val);
-		return this;
-	}
-	inline sfNode* append(int val)
-	{
-		addValue()->val(val);
-		return this;
-	}
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(double val)
-	{
-		addValue()->val(val);
-		return this;
-	}
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* append(const char* val = NULL, size_t len = 0)
-	{
-		addValue()->val(val, len);
-		return this;
-	}
-
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* appendNamed(const char* name, bool val)
-	{
-		addValue()->name(name)->val(val);
-		return this;
-	}
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* appendNamed(const char* name, int64_t val)
-	{
-		addValue()->name(name)->val(val);
-		return this;
-	}
-	inline sfNode* appendNamed(const char* name, int val)
-	{
-		addValue()->name(name)->val(val);
-		return this;
-	}
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* appendNamed(const char* name, double val)
-	{
-		addValue()->name(name)->val(val);
-		return this;
-	}
-	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
-	inline sfNode* appendNamed(const char* name, const char* val = NULL, size_t len = 0)
-	{
-		addValue()->name(name)->val(val, len);
-		return this;
-	}
-
-	//
-	inline sfNode* createValue(bool val)
-	{
-		return createValue()->val(val);
-	}
-	inline sfNode* createValue(int64_t val)
-	{
-		return createValue()->val(val);
-	}
-	inline sfNode* createValue(double val)
-	{
-		return createValue()->val(val);
-	}
-	inline sfNode* createValue(const char* val, size_t len = 0)
-	{
-		return createValue()->val(val, len);
-	}
 };
 
 namespace sfjson {
@@ -281,6 +142,7 @@ namespace sfjson {
 		4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,	// 97~122
 		0, 0, 3, 0, 0,
 	};
+	static uint8_t json_allends_allowed[128] = { 0 };
 	static uint8_t json_invisibles_allowed[33] =
 	{
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
@@ -289,37 +151,39 @@ namespace sfjson {
 	static uint8_t json_escape_chars[256] = { 0 };
 	static uint8_t json_unescape_chars[256] = { 0 };
 
-	struct initJsonEscapeChars
+	static void initJsonEscapeChars()
 	{
-		initJsonEscapeChars()
-		{
-			json_escape_chars['\\'] = 1;
-			//json_escape_chars['/'] = 1;
-			json_escape_chars['"'] = 1;
-			json_escape_chars['\\'] = 1;
-			json_escape_chars['\n'] = 'n';
-			json_escape_chars['\r'] = 'r';
-			json_escape_chars['\t'] = 't';
-			json_escape_chars['\a'] = 'a';
-			json_escape_chars['\f'] = 'f';
-			json_escape_chars['\v'] = 'v';
-			json_escape_chars['\b'] = 'b';
+		if (json_escape_chars['\\'])
+			return ;
 
-			json_unescape_chars['n'] = '\n';
-			json_unescape_chars['r'] = '\r';
-			json_unescape_chars['t'] = '\t';
-			json_unescape_chars['a'] = '\a';
-			json_unescape_chars['f'] = '\f';
-			json_unescape_chars['v'] = '\v';
-			json_unescape_chars['b'] = '\b';
+		json_allends_allowed[','] = json_allends_allowed['}'] = json_allends_allowed[']'] = json_allends_allowed[' '] = 1;
 
-			json_unescape_chars['u'] = 'u';
-			json_unescape_chars['/'] = '/';
-			json_unescape_chars['\\'] = '\\';
-			json_unescape_chars['\''] = '\'';
-			json_unescape_chars['"'] = '"';
-		}
-	} _g_initJsonEscapeChars;
+		json_escape_chars['\\'] = 1;
+		//json_escape_chars['/'] = 1;
+		json_escape_chars['"'] = 1;
+		json_escape_chars['\\'] = 1;
+		json_escape_chars['\n'] = 'n';
+		json_escape_chars['\r'] = 'r';
+		json_escape_chars['\t'] = 't';
+		json_escape_chars['\a'] = 'a';
+		json_escape_chars['\f'] = 'f';
+		json_escape_chars['\v'] = 'v';
+		json_escape_chars['\b'] = 'b';
+
+		json_unescape_chars['n'] = '\n';
+		json_unescape_chars['r'] = '\r';
+		json_unescape_chars['t'] = '\t';
+		json_unescape_chars['a'] = '\a';
+		json_unescape_chars['f'] = '\f';
+		json_unescape_chars['v'] = '\v';
+		json_unescape_chars['b'] = '\b';
+
+		json_unescape_chars['u'] = 'u';
+		json_unescape_chars['/'] = '/';
+		json_unescape_chars['\\'] = '\\';
+		json_unescape_chars['\''] = '\'';
+		json_unescape_chars['"'] = '"';
+	}
 
 	enum sfJSONValueType
 	{
@@ -630,43 +494,20 @@ namespace sfjson {
 	public:
 		typedef T               value_type;
 		typedef T*              pointer;
-		typedef T&              reference;
-		typedef const T*        const_pointer;
-		typedef const T&        const_reference;
 		typedef size_t          size_type;
-		typedef intptr_t        difference_type;
-
-		template <typename U> struct rebind {
-			typedef TMemoryPool<U> other;
-		};
 
 		TMemoryPool() throw()
 		{
-			fixedBlock_ = 0;
 			currentBlock_ = 0;
 			currentSlot_ = 0;
 			lastSlot_ = 0;
 			freeSlots_ = 0;
 			slotsCount_ = 0;
 		}
-		TMemoryPool(const TMemoryPool& memoryPool) throw()
-		{
-			TMemoryPool();
-		}
-		template <typename U, size_t N> TMemoryPool(const TMemoryPool<U, N>& memoryPool) throw()
-		{
-			TMemoryPool();
-		}
 
 		inline ~TMemoryPool() throw()
 		{
 			freeall();
-		}
-		
-		void initFixed(void* fixed)
-		{
-			fixedBlock_ = (data_pointer_)fixed;
-			allocateBlock(fixedBlock_);
 		}
 
 		inline pointer allocate(size_t cc = 1)
@@ -693,27 +534,6 @@ namespace sfjson {
 			}
 		}
 
-		inline size_type count() const throw() { return slotsCount_; }
-		inline size_type max_size() const throw()
-		{
-			size_type maxBlocks = -1 / BlockSize;
-			return (BlockSize - sizeof(data_pointer_)) / sizeof(slot_type_) * maxBlocks;
-		}
-
-		inline pointer newElement()
-		{
-			pointer result = allocate();
-			new (result)value_type();
-			return result;
-		}
-		inline void deleteElement(pointer p)
-		{
-			if (p != 0) {
-				p->~value_type();
-				deallocate(p);
-			}
-		}
-
 	private:
 		union Slot_ {
 			char objspace[sizeof(value_type)];
@@ -724,7 +544,6 @@ namespace sfjson {
 		typedef Slot_ slot_type_;
 		typedef Slot_* slot_pointer_;
 
-		data_pointer_ fixedBlock_;
 		slot_pointer_ currentBlock_;
 		slot_pointer_ currentSlot_;
 		slot_pointer_ lastSlot_;
@@ -756,8 +575,7 @@ namespace sfjson {
 			slot_pointer_ curr = currentBlock_;
 			while (curr != 0) {
 				slot_pointer_ prev = curr->next;
-				if (curr != reinterpret_cast<slot_pointer_>(fixedBlock_))
-					operator delete(reinterpret_cast<void*>(curr));
+				operator delete(reinterpret_cast<void*>(curr));
 				curr = prev;
 			}
 
@@ -774,7 +592,7 @@ namespace sfjson {
 	// JSON File Object
 	class JFile
 	{
-		friend class sfNode;
+		friend class ::sfNode;
 	public:
 		enum
 		{
@@ -789,7 +607,7 @@ namespace sfjson {
 		};
 
 	private:
-		typedef TMemoryPool<sfNode> NodesPool;
+		typedef TMemoryPool<sfNodeBase> NodesPool;
 
 		char				*m_pMemEnd;
 		char				*m_pLastPos;
@@ -801,8 +619,8 @@ namespace sfjson {
 		MemList				m_strBuf;
 		uint32_t			m_nOpens;
 		uint32_t			m_opens[SFJ_MAX_PARSE_LEVEL];
-		sfNode				*m_nodeOpens[SFJ_MAX_PARSE_LEVEL];
-		sfNode				*m_pRoot;
+		sfNodeBase			*m_nodeOpens[SFJ_MAX_PARSE_LEVEL];
+		sfNodeBase			*m_pRoot;
 
 	public:
 		inline JFile(size_t nSize)
@@ -812,6 +630,7 @@ namespace sfjson {
 			, m_nOpens(0)
 			, m_pRoot(NULL)
 		{
+			initJsonEscapeChars();
 		}
 
 		inline JFile(char* init, size_t nSize)
@@ -821,6 +640,7 @@ namespace sfjson {
 			, m_nOpens(0)
 			, m_pRoot(NULL)
 		{
+			initJsonEscapeChars();
 			m_strBuf.wrapNode(init, nSize);
 		}
 
@@ -831,23 +651,24 @@ namespace sfjson {
 		inline sfNode* getRoot()
 		{
 			m_pRoot->pFile = this;
-			return m_pRoot;
+			return (sfNode*)m_pRoot;
 		}
 
 		sfNode* newRoot(bool bIsObject)
 		{
-			m_pRoot = m_nodesPool.newElement();
-			memset(m_pRoot, 0, sizeof(sfNode));
+			m_pRoot = m_nodesPool.allocate();
+			memset(m_pRoot, 0, sizeof(sfNodeBase));
 
 			m_pRoot->pFile = this;
 			m_pRoot->nodeType = bIsObject ? JATObject : JATArray;
 
-			return m_pRoot;
+			return (sfNode*)m_pRoot;
 		}
 
-		size_t parse()
+		size_t parse(char* pMemory)
 		{
-			char* pMemory = (char*)(this + 1);
+			if (!pMemory)
+				pMemory = (char*)(this + 1);
 			m_pMemEnd = pMemory + m_nMemSize;
 
 			char* pReadPos = parseRoot(m_pLastPos = pMemory);
@@ -936,10 +757,10 @@ namespace sfjson {
 			return bytes;
 		}
 
-		void printToBuffer(MemList& encodeBuf, sfNode* node, sfNode* parent, uint32_t flags)
-		{
-			sfNode* n;
+		void printToBuffer(MemList& encodeBuf, sfNodeBase* node, sfNodeBase* parent, uint32_t flags)
+		{			
 			size_t len;
+			sfNodeBase* n;
 			char szBuf[32] = { 0 };
 
 			if (parent->nodeType == JATObject)
@@ -991,13 +812,13 @@ namespace sfjson {
 			case JATObject:			
 				encodeBuf.addChar('{');
 				len = 0;
-				n = node->child;
+				n = (sfNodeBase*)node->child;
 				while (n)
 				{
 					if (len ++ > 0)
 						encodeBuf.addChar(',');
 					printToBuffer(encodeBuf, n, node, flags);
-					n = n->next;
+					n = (sfNodeBase*)n->next;
 				}
 				encodeBuf.addChar('}');
 				break;
@@ -1005,13 +826,13 @@ namespace sfjson {
 			case JATArray:
 				encodeBuf.addChar('[');
 				len = 0;
-				n = node->child;
+				n = (sfNodeBase*)node->child;
 				while (n)
 				{
 					if (len ++ > 0)
 						encodeBuf.addChar(',');
 					printToBuffer(encodeBuf, n, node, flags);
-					n = n->next;
+					n = (sfNodeBase*)n->next;
 				}
 				encodeBuf.addChar(']');
 				break;
@@ -1019,41 +840,50 @@ namespace sfjson {
 		}
 
 	private:
-		sfNode* openNode(uint32_t kAttr, sfNode* parent)
+		sfNodeBase* openNode(uint32_t kAttr, sfNodeBase* parent)
 		{
-			sfNode* n = m_nodesPool.newElement();
-			memset(n, 0, sizeof(sfNode));
+			sfNodeBase* n = m_nodesPool.allocate();
+			memset(n, 0, sizeof(sfNodeBase));
 
 			n->nodeType = kAttr;
 			m_opens[m_nOpens] = kAttr;
 			m_nodeOpens[m_nOpens ++] = n;
 
 			if (parent)
-				return parent->add(n);
+			{
+				parent->childCount ++;
+				if (parent->child)
+					((sfNodeBase*)parent->childLast)->next = (sfNode*)n;
+				else
+					parent->child = (sfNode*)n;
+				parent->childLast = (sfNode*)n;
+			}
 
 			return n;
 		}
 
-		sfNode* openNode(uint32_t kAttr, sfJSONString& name, sfNode* parent)
+		sfNodeBase* openNode(uint32_t kAttr, sfJSONString& name, sfNodeBase* parent)
 		{
-			sfNode* n = openNode(kAttr, parent);
+			sfNodeBase* n = openNode(kAttr, parent);
 
 			n->nameKey = name.pString;
 			n->nameLength = name.nLength;
+			n->nameKey[n->nameLength] = 0;
 
 			return n;
 		}
 
-		sfNode* addValueNode(bool bIsString, sfJSONString& val, sfNode* parent)
+		sfNodeBase* addValueNode(bool bIsString, sfJSONString& val, sfNodeBase* parent)
 		{
-			sfNode* n = m_nodesPool.newElement();
-			memset(n, 0, sizeof(sfNode));
+			sfNodeBase* n = m_nodesPool.allocate();
+			memset(n, 0, sizeof(sfNodeBase));
 
 			if (bIsString)
 			{
 				n->strval = val.pString;
 				n->valLength = val.nLength;
 				n->nodeType = JATString;
+				n->strval[n->valLength] = 0;
 			}
 			else
 			{
@@ -1084,7 +914,14 @@ namespace sfjson {
 				}
 			}
 
-			return parent->add(n);
+			parent->childCount ++;
+			if (parent->child)
+				((sfNodeBase*)parent->childLast)->next = (sfNode*)n;
+			else
+				parent->child = (sfNode*)n;
+			parent->childLast = (sfNode*)n;
+
+			return n;
 		}
 
 		char* parseRoot(char* pReadPos)
@@ -1108,7 +945,7 @@ namespace sfjson {
 			return pReadPos;
 		}
 
-		char* parseObject(char* pReadPos, sfNode* parent)
+		char* parseObject(char* pReadPos, sfNodeBase* parent)
 		{
 			if (m_nOpens == SFJ_MAX_PARSE_LEVEL)
 			{
@@ -1163,9 +1000,10 @@ namespace sfjson {
 						if (!pReadPos)
 							return 0;
 						
-						sfNode* n = addValueNode(bQuoteStart, val, parent);
+						sfNodeBase* n = addValueNode(bQuoteStart, val, parent);
 						n->nameKey = name.pString;
 						n->nameLength = name.nLength;
+						n->nameKey[n->nameLength] = 0;
 					}
 
 					SFJ_SKIP_WHITES();
@@ -1208,7 +1046,7 @@ namespace sfjson {
 		}
 
 		//读取数组
-		char* parseArray(char* pReadPos, sfNode* parent)
+		char* parseArray(char* pReadPos, sfNodeBase* parent)
 		{
 			uint32_t cc = 0;
 
@@ -1406,8 +1244,23 @@ namespace sfjson {
 				}
 				else if (ctl == 1)
 				{
-					// 十进制整数或小数
-					kValType = memchr(pReadPos, '.', m_pMemEnd - pReadPos) ? JVTDouble : JVTDecimal;
+					// 十进制整数或数字开头的小数
+					char* pTest = pReadPos + 1;
+
+					kValType = JVTDecimal;
+					while (pTest < m_pMemEnd)
+					{
+						ch = *pTest ++;
+						if (ch < 32 || ch >= 128)
+							return 0;
+						if (json_allends_allowed[ch])
+							break;
+						if (json_value_char_tbl[ch] != 1)
+						{
+							kValType = JVTDouble;
+							break;
+						}
+					}
 				}
 				else if (ctl >= 4 && ctl <= 7)
 				{
@@ -1428,6 +1281,12 @@ namespace sfjson {
 						pReadPos += 4;
 					}
 					else
+					{
+						m_iErr = kErrorValue;
+						return 0;
+					}
+
+					if (!json_allends_allowed[pReadPos[0]])
 					{
 						m_iErr = kErrorValue;
 						return 0;
@@ -1575,273 +1434,545 @@ namespace sfjson {
 }
 
 //////////////////////////////////////////////////////////////////////////
-inline sfNode* sfNode::find(const char* str) const
+class sfNode : public sfNodeBase
 {
-	sfNode* n = child;
-	while (n)
+public:
+	typedef void(*fndefNodePrinted)(const char* code, size_t len, void* user);
+	static void fnNodePrintToString(const char* code, size_t len, void* user)
 	{
-		if (strcmp(nameKey, str) == 0)
-			return n;
-		n = n->next;
-	}
-	return NULL;
-}
-
-inline sfNode* sfNode::index(uint32_t index) const
-{
-	uint32_t i = 0;
-	sfNode* n = child;
-	while (i < index && n)
-		n = n->next;
-	return n;
-}
-
-double sfNode::toDouble() const
-{
-	if (nodeType == JATDoubleValue)
-		return dval;
-	if (nodeType == JATIntValue || nodeType == JATBooleanValue)
-		return ival;
-	return 0;
-}
-int64_t sfNode::toInteger() const
-{
-	if (nodeType == JATIntValue || nodeType == JATBooleanValue)
-		return ival;
-	if (nodeType == JATDoubleValue)
-	{
-		union double2int
-		{
-			double	dval;
-			int32_t	i32;
-		} u;
-
-		u.dval = dval + 6755399441055744.0;
-		return u.i32;
-	}
-	return 0;
-}
-
-void sfNode::destroy()
-{
-	if (pFile)
-	{
-		sfjson::JFile* p = (sfjson::JFile*)pFile;
-		p->~JFile();
-		free(p);
-	}
-}
-
-sfNode* sfNode::createObject(const char* name, size_t len)
-{
-	sfjson::JFile* p = (sfjson::JFile*)pFile;
-
-	sfNode* n = p->m_nodesPool.newElement();
-	memset(n, 0, sizeof(sfNode));
-
-	n->nodeType = JATObject;
-	n->pFile = pFile;
-
-	if (name)
-		n->name(name, len);
-
-	return n;
-}
-sfNode* sfNode::createArray(const char* name, size_t len)
-{
-	sfjson::JFile* p = (sfjson::JFile*)pFile;
-
-	sfNode* n = p->m_nodesPool.newElement();
-	memset(n, 0, sizeof(sfNode));
-
-	n->nodeType = JATArray;
-	n->pFile = pFile;
-
-	if (name)
-		n->name(name, len);
-
-	return n;
-}
-sfNode* sfNode::createValue()
-{
-	sfjson::JFile* p = (sfjson::JFile*)pFile;
-
-	sfNode* n = p->m_nodesPool.newElement();
-	memset(n, 0, sizeof(sfNode));
-
-	n->pFile = pFile;
-
-	return n;
-}
-
-sfNode* sfNode::add(sfNode* n)
-{
-	childCount ++;
-	if (child)
-		childLast->next = n;
-	else
-		child = n;
-	childLast = n;
-
-	return this;
-}
-
-sfNode* sfNode::name(const char* name, size_t len)
-{
-	if (name)
-	{
-		sfjson::JFile* p = (sfjson::JFile*)pFile;
-		nameLength = len ? len : strlen(name);
-		nameKey = p->m_strBuf.addString(name, nameLength + 1);
-		nameKey[nameLength] = 0;
-	}
-
-	return this;
-}
-
-sfNode* sfNode::val(bool val)
-{
-	assert(nodeType < JATObject);
-
-	if (nodeType < JATObject)
-	{
-		bval = val;
-		valLength = -1;
-		nodeType = JATBooleanValue;	
-	}
-	return this;
-}
-
-sfNode* sfNode::val(int64_t val)
-{
-	assert(nodeType < JATObject);
-
-	if (nodeType < JATObject)
-	{
-		ival = val;
-		valLength = -1;
-		nodeType = JATIntValue;
-	}
-	return this;
-}
-
-sfNode* sfNode::val(int val)
-{
-	assert(nodeType < JATObject);
-
-	if (nodeType < JATObject)
-	{
-		ival = val;
-		valLength = -1;
-		nodeType = JATIntValue;
-	}
-	return this;
-}
-
-sfNode* sfNode::val(double val)
-{
-	assert(nodeType < JATObject);
-
-	if (nodeType < JATObject)
-	{
-		dval = val;
-		valLength = -1;
-		nodeType = JATDoubleValue;
-	}
-	return this;
-}
-
-sfNode* sfNode::val(const char* val, size_t len)
-{	
-	assert(nodeType < JATObject);
-
-	if (nodeType < JATObject)
-	{
-		sfjson::JFile* p = (sfjson::JFile*)pFile;
-		if (val)
-		{
-			nodeType = JATString;
-			valLength = len ? len : strlen(val);
-			strval = p->m_strBuf.addString(val, valLength + 1);
-			strval[valLength] = 0;
-		}
+		std::string* str = (std::string*)user;
+		if (code)
+			str->append(code, len);
 		else
+			str->reserve(len);
+	}
+
+public:
+	// 按名字顺序查找
+	inline sfNode* find(const char* str) const
+	{
+		sfNode* n = child;
+		while (n)
 		{
-			strval = NULL;
+			if (strcmp(n->nameKey, str) == 0)
+				return n;
+			n = n->next;
+		}
+		return NULL;
+	}
+	// 按索引取出，从0开始计数
+	inline sfNode* index(uint32_t index) const
+	{
+		uint32_t i = 0;
+		sfNode* n = child;
+		while (i < index && n)
+			n = n->next;
+		return n;
+	}
+	// 按索引取出，从0开始计数
+	inline sfNode* operator [] (uint32_t index) const
+	{
+		uint32_t i = 0;
+		sfNode* n = child;
+		while (i < index && n)
+			n = n->next;
+		return n;
+	}
+
+	// 仅创建出一个空节点
+	sfNode* createObject(const char* name = NULL, size_t len = 0)
+	{
+		sfjson::JFile* p = (sfjson::JFile*)pFile;
+
+		sfNode* n = (sfNode*)p->m_nodesPool.allocate();
+		memset(n, 0, sizeof(sfNode));
+
+		n->nodeType = JATObject;
+		n->pFile = pFile;
+
+		if (name)
+			n->name(name, len);
+
+		return n;
+	}
+	// 仅创建出一个空数组
+	sfNode* createArray()
+	{
+		sfjson::JFile* p = (sfjson::JFile*)pFile;
+
+		sfNode* n = (sfNode*)p->m_nodesPool.allocate();
+		memset(n, 0, sizeof(sfNode));
+
+		n->nodeType = JATArray;
+		n->pFile = pFile;
+
+		return n;
+	}
+	// 创建出一个空值
+	sfNode* createValue()
+	{
+		sfjson::JFile* p = (sfjson::JFile*)pFile;
+
+		sfNode* n = (sfNode*)p->m_nodesPool.allocate();
+		memset(n, 0, sizeof(sfNode));
+
+		n->pFile = pFile;
+
+		return n;
+	}
+
+	// 为本节点创建一个父节点，并将本节点添加进去
+	sfNode* createParentObject(const char* name, size_t len = 0)
+	{
+		sfjson::JFile* p = (sfjson::JFile*)pFile;
+
+		sfNode* n = (sfNode*)p->m_nodesPool.allocate();
+		memset(n, 0, sizeof(sfNode));
+
+		n->nodeType = JATObject;
+		n->pFile = pFile;
+		n->add(this);
+
+		if (name)
+			this->name(name, len);
+
+		return n;
+	}
+	// 创建出一个空数组
+	sfNode* createParentArray()
+	{
+		sfjson::JFile* p = (sfjson::JFile*)pFile;
+
+		sfNode* n = (sfNode*)p->m_nodesPool.allocate();
+		memset(n, 0, sizeof(sfNode));
+
+		n->nodeType = JATArray;
+		n->pFile = pFile;
+		n->add(this);
+
+		return n;
+	}
+
+	// 将一个已经创建好的节点添加到本节点下成为子节点并返回this
+	sfNode* add(sfNode* n)
+	{
+		childCount ++;
+		if (child)
+			childLast->next = n;
+		else
+			child = n;
+		childLast = n;
+
+		return this;
+	}
+	// 将一个已经创建好的节点添加到本节点下成为子节点并在设置名字后返回this
+	sfNode* add(sfNode* n, const char* name, size_t len = 0)
+	{
+		n->name(name, len);
+
+		childCount ++;
+		if (child)
+			childLast->next = n;
+		else
+			child = n;
+		childLast = n;
+
+		return this;
+	}
+
+	// 设置节点的名字
+	sfNode* name(const char* name, size_t len = 0)
+	{
+		if (name)
+		{
+			sfjson::JFile* p = (sfjson::JFile*)pFile;
+			nameLength = len ? len : strlen(name);
+			nameKey = p->m_strBuf.addString(name, nameLength + 1);
+			nameKey[nameLength] = 0;
+		}
+
+		return this;
+	}
+
+	// 设置本节点的值为布尔型
+	sfNode* val(bool val)
+	{
+		assert(nodeType < JATObject);
+
+		if (nodeType < JATObject)
+		{
+			bval = val;
 			valLength = -1;
-			nodeType = JATNullValue;
+			nodeType = JATBooleanValue;
+		}
+		return this;
+	}
+	// 设置本节点的值为整数型
+	sfNode* val(int64_t val)
+	{
+		assert(nodeType < JATObject);
+
+		if (nodeType < JATObject)
+		{
+			ival = val;
+			valLength = -1;
+			nodeType = JATIntValue;
+		}
+		return this;
+	}
+	sfNode* val(int val)
+	{
+		assert(nodeType < JATObject);
+
+		if (nodeType < JATObject)
+		{
+			ival = val;
+			valLength = -1;
+			nodeType = JATIntValue;
+		}
+		return this;
+	}
+	// 设置本节点的值为小数型
+	sfNode* val(double val)
+	{
+		assert(nodeType < JATObject);
+
+		if (nodeType < JATObject)
+		{
+			dval = val;
+			valLength = -1;
+			nodeType = JATDoubleValue;
+		}
+		return this;
+	}
+	// 设置本节点的值为字符串型。如果不带参数调用则值设置为null节点
+	sfNode* val(const char* val = NULL, size_t len = 0)
+	{
+		assert(nodeType < JATObject);
+
+		if (nodeType < JATObject)
+		{
+			sfjson::JFile* p = (sfjson::JFile*)pFile;
+			if (val)
+			{
+				nodeType = JATString;
+				valLength = len ? len : strlen(val);
+				strval = p->m_strBuf.addString(val, valLength + 1);
+				strval[valLength] = 0;
+			}
+			else
+			{
+				strval = NULL;
+				valLength = -1;
+				nodeType = JATNullValue;
+			}
+		}
+		return this;
+	}
+
+	// 整数、布尔、小数转浮点型，其它类型返回0
+	inline double toDouble() const
+	{
+		if (nodeType == JATDoubleValue)
+			return dval;
+		if (nodeType == JATIntValue || nodeType == JATBooleanValue)
+			return ival;
+		return 0;
+	}
+	// 整数、布尔、小数转整数型，其它类型返回0
+	inline int64_t toInteger() const
+	{
+#define D2I_ENDIALOC	0
+
+		if (nodeType == JATIntValue || nodeType == JATBooleanValue)
+			return ival;
+		if (nodeType == JATDoubleValue)
+		{
+			union d2int
+			{
+				double	dval;
+				int32_t	i32[2];
+			} u;
+
+			u.dval = dval + 6755399441055744.0;
+			return u.i32[D2I_ENDIALOC];
+		}
+		return 0;
+	}
+	// 转字符串
+	void toString(std::string& strOut) const
+	{
+		size_t len;
+		char szBuf[32];
+
+		switch (nodeType)
+		{
+		case JATString:
+			strOut.append(strval, valLength);
+			break;
+
+		case JATBooleanValue:
+			if (bval)
+				strOut.append("true", 4);
+			else
+				strOut.append("false", 5);
+			break;
+
+		case JATIntValue:
+#ifdef _SFJSON_CRTOPT_H__
+			len = opt_i64toa(ival, szBuf);
+#else
+			len = sprintf(szBuf, "%lld", ival);
+#endif
+			strOut.append(szBuf, len);
+			break;
+
+		case JATDoubleValue:
+#ifdef _SFJSON_CRTOPT_H__
+			len = opt_dtoa(dval, szBuf);
+#else
+			len = sprintf(szBuf, "%f", dval);
+#endif
+			strOut.append(szBuf, len);
+			break;
+
+		case JATNullValue:
+			strOut.append("null", 4);
+			break;
 		}
 	}
-	return this;
-}
 
-bool sfNode::printTo(std::string& strOut, uint32_t flags)
-{
-	char fixbuf[SFJ_ENCODE_INIT_MEMSIZE];
-	sfjson::JFile* p = (sfjson::JFile*)pFile;
-	sfjson::MemList encodeBuf;
-	char beginChar;
-
-	switch (nodeType)
+	// 直接获取小数
+	template <typename R> R toInt() const
 	{
-	case JATObject: beginChar = '{'; break;
-	case JATArray: beginChar = '['; break;
-	default: return false;
+		return (R)ival;
 	}
 
-	encodeBuf.wrapNode(fixbuf, sizeof(fixbuf));
-
-	sfNode* node = child;
-	while(node)
+	// 格式化输出为字符串
+	inline bool printTo(std::string& strOut, uint32_t flags = kJsonUnicodes)
 	{
-		if (node != child)
-			encodeBuf.addChar(',');
-		p->printToBuffer(encodeBuf, node, this, flags);
-		node = node->next;
+		return printTo(fnNodePrintToString, &strOut, flags);
 	}
 
-	// 统计
-	size_t total = 0;
-	sfjson::MemNode* n = encodeBuf.first;
-
-	while (n)
+	bool printTo(fndefNodePrinted fn, void* user, uint32_t flags = kJsonUnicodes)
 	{
-		total += n->used;
-		n = n->next;
+		char fixbuf[SFJ_ENCODE_INIT_MEMSIZE];
+		sfjson::JFile* p = (sfjson::JFile*)pFile;
+		sfjson::MemList encodeBuf;
+		char beginChar;
+
+		switch (nodeType)
+		{
+		case JATObject: beginChar = '{'; break;
+		case JATArray: beginChar = '['; break;
+		default: return false;
+		}
+
+		encodeBuf.wrapNode(fixbuf, sizeof(fixbuf));
+
+		sfNode* node = child;
+		while (node)
+		{
+			if (node != child)
+				encodeBuf.addChar(',');
+			p->printToBuffer(encodeBuf, node, this, flags);
+			node = node->next;
+		}
+
+		// 统计
+		size_t total = 0;
+		sfjson::MemNode* n = encodeBuf.first;
+
+		while (n)
+		{
+			total += n->used;
+			n = n->next;
+		}
+
+		if (fn)
+		{
+			fn(NULL, total + 2, user);
+			fn(&beginChar, 1, user);
+
+			// 合并
+			n = encodeBuf.first;
+			while (n)
+			{
+				fn((char*)(n + 1), n->used, user);
+				n = n->next;
+			}
+
+			beginChar = beginChar == '{' ? '}' : ']';
+			fn(&beginChar, 1, user);
+		}
+
+		return true;
 	}
 
-	strOut += beginChar;
-	strOut.reserve(total + 2);
-
-	// 合并
-	n = encodeBuf.first;	
-	while (n)
+	// 销毁
+	void destroy()
 	{
-		strOut.append((char*)(n + 1), n->used);
-		n = n->next;
+		if (pFile)
+		{
+			sfjson::JFile* p = (sfjson::JFile*)pFile;
+			p->~JFile();
+			free(p);
+		}
 	}
 
-	strOut += beginChar == '{' ? '}' : ']';
+public:// 链式操作函数组
+	   // 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* append(bool val)
+	{
+		addValue()->val(val);
+		return this;
+	}
+	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* append(int64_t val)
+	{
+		addValue()->val(val);
+		return this;
+	}
+	inline sfNode* append(int val)
+	{
+		addValue()->val(val);
+		return this;
+	}
+	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* append(double val)
+	{
+		addValue()->val(val);
+		return this;
+	}
+	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* append(const char* val = NULL, size_t len = 0)
+	{
+		addValue()->val(val, len);
+		return this;
+	}
 
-	return true;
-}
+	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* appendNamed(const char* name, bool val)
+	{
+		addValue()->name(name)->val(val);
+		return this;
+	}
+	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* appendNamed(const char* name, int64_t val)
+	{
+		addValue()->name(name)->val(val);
+		return this;
+	}
+	inline sfNode* appendNamed(const char* name, int val)
+	{
+		addValue()->name(name)->val(val);
+		return this;
+	}
+	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* appendNamed(const char* name, double val)
+	{
+		addValue()->name(name)->val(val);
+		return this;
+	}
+	// 创建值型节点同时添加为子节点并返回本节点（非刚创建的子节点）
+	inline sfNode* appendNamed(const char* name, const char* val = NULL, size_t len = 0)
+	{
+		addValue()->name(name)->val(val, len);
+		return this;
+	}
+
+	// 创建各种值类型的节点
+	inline sfNode* createValue(bool val)
+	{
+		return createValue()->val(val);
+	}
+	inline sfNode* createValue(int64_t val)
+	{
+		return createValue()->val(val);
+	}
+	inline sfNode* createValue(double val)
+	{
+		return createValue()->val(val);
+	}
+	inline sfNode* createValue(const char* val, size_t len = 0)
+	{
+		return createValue()->val(val, len);
+	}
+
+	// 创建节点同时添加为子节点并返回刚创建的节点
+	inline sfNode* addObject(const char* name = NULL, size_t len = 0)
+	{
+		sfNode* n = createObject(name, len); 
+		add(n);
+		return n;
+	}
+	// 创建数组同时添加为子节点并返回刚创建的节点
+	inline sfNode* addArray(const char* name = NULL, size_t len = 0)
+	{
+		sfNode* n = createArray(); 
+		if (name) n->name(name, len);
+		add(n);
+		return n;
+	}
+
+	// 创建值同时添加为子节点并返回刚创建的节点
+	inline sfNode* addValue() { sfNode* n = createValue(); add(n); return n; }
+
+	// 创建值同时添加为子节点并根据值类型设置完值后，返回刚创建的节点
+	inline sfNode* addValue(bool val) { sfNode* n = createValue()->val(val); add(n); return n; }
+	inline sfNode* addValue(int64_t val) { sfNode* n = createValue()->val(val); add(n); return n; }
+	inline sfNode* addValue(double val) { sfNode* n = createValue()->val(val); add(n); return n; }
+	inline sfNode* addValue(const char* val, size_t len = 0) { sfNode* n = createValue()->val(val, len); add(n); return n; }
+};
 
 //////////////////////////////////////////////////////////////////////////
 // 从Json代码解析
-static sfNode* sfJsonDecode(const char* code, size_t len)
+static sfNode* sfJsonDecode(const char* code, size_t len, bool bCopyCode = false)
 {
-	sfjson::JFile* p = (sfjson::JFile*)malloc(len + 1 + sizeof(sfjson::JFile));
+	size_t s = sizeof(sfjson::JFile);
+	if (bCopyCode)
+		s += len;
+
+	sfjson::JFile* p = (sfjson::JFile*)malloc(s);
 	new (p) sfjson::JFile(len);
 
-	memcpy((char*)(p + 1), code, len);
-
-	if (p->parse() > 0)
+	if (bCopyCode)
+	{
+		memcpy((char*)(p + 1), code, len);
+		if (p->parse(NULL) > 0)
+			return p->getRoot();
+	}
+	else if (p->parse(const_cast<char*>(code)) > 0)
+	{
 		return p->getRoot();
+	}
 
 	p->~JFile();
 	free(p);
 
 	return NULL;
+}
+static inline sfNode* sfJsonDecode(const std::string& strInput, bool bCopyCode = false)
+{
+	return sfJsonDecode(strInput.c_str(), strInput.length(), bCopyCode);
+}
+
+// 直接使用静态地址，同时不再分配内存也不再复制Json字符串
+#define sfJsonDecl(varname) char varname[sizeof(sfjson::JFile)]
+
+static inline sfNode* sfJsonDecodeFixed(void* jFileMem, const char* code, size_t len)
+{
+	sfjson::JFile* p = (sfjson::JFile*)jFileMem;
+	new (p) sfjson::JFile(len);
+
+	if (p->parse(const_cast<char*>(code)) > 0)
+		return p->getRoot();
+
+	return NULL;
+}
+static sfNode* sfJsonDecodeFixed(void* jFileMem, const std::string& strInput)
+{
+	return sfJsonDecodeFixed(jFileMem, strInput.c_str(), strInput.length());
 }
 
 //////////////////////////////////////////////////////////////////////////
